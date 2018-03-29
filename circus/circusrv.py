@@ -87,7 +87,31 @@ class CircusSrv(win32serviceutil.ServiceFramework):
 
 
 def main():
+    import argparse
+    import sys
+    parser = argparse.ArgumentParser(sys.argv[0])
+    parser.add_argument('-w', '--wrapper')
+    parser.add_argument('-n', '--name')
+    parser.add_argument('-r', '--displayname')
+    parser.add_argument('-d', '--description')
+    args, unknown_args = parser.parse_known_args(sys.argv[1:])
+    unknown_args = [sys.argv[0]] + unknown_args
+
+    if args.name:
+        CircusSrv._svc_name_ = args.name
+
+    if args.displayname:
+        CircusSrv._svc_display_name_ = args.displayname
+
+    if args.description:
+        CircusSrv._svc_description_ = args.description
+
+    if args.wrapper:
+        CircusSrv._exe_name_ = args.wrapper
+        CircusSrv._exe_args_ = win32serviceutil.LocatePythonServiceExe()
+
     kwargs = {}
+    kwargs['argv'] = unknown_args
     kwargs['customInstallOptions'] = 'c:l:'
     kwargs['customOptionHandler'] = CircusSrv.OptionsHandler
     ret = win32serviceutil.HandleCommandLine(CircusSrv, **kwargs)
