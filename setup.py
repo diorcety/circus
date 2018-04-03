@@ -15,7 +15,7 @@ except ImportError:
     install_requires.append('argparse')
 
 if os.name == 'nt':
-    install_requires.append('pypiwin32')
+    install_requires.append('pywin32==223.1+x')
 
 with open("README.rst") as f:
     README = f.read()
@@ -40,6 +40,9 @@ setup(name='circus',
           "License :: OSI Approved :: Apache Software License"
       ],
       install_requires=install_requires,
+      dependency_links=[
+            'git+https://github.com/diorcety/pywin32.git@x#egg=pywin32-223.1+x',
+      ],
       test_suite='circus.tests',
       entry_points="""
       [console_scripts]
