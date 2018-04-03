@@ -4,7 +4,7 @@ import warnings
 
 
 version_info = (0, 15, 0)
-__version__ = ".".join(map(str, version_info))
+__version__ = ".".join(map(str, version_info)) + '+x'
 
 # This config call is done to avoid any
 #     "no handlers could be found for logger"
