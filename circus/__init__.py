@@ -3,8 +3,8 @@ import os
 import warnings
 
 
-version_info = (0, 13, 1)
-__version__ = ".".join(map(str, version_info))
+version_info = (0, 13, 2)
+__version__ = ".".join(map(str, version_info)) + '.dev0+x'
 
 # This config call is done to avoid any
 #     "no handlers could be found for logger"
