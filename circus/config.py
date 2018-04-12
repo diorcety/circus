@@ -70,11 +70,10 @@ class DefaultConfigParser(StrictConfigParser):
         return [(key, replace_gnu_args(value, env=self._env))
                 for key, value in items]
 
-    def dget(self, section, option, default=None, type=str):
-        if not self.has_option(section, option):
+    @staticmethod
+    def _dget(value, default=None, type=str):
+        if value is None:
             return default
-
-        value = self.get(section, option)
 
         if type is int:
             value = int(value)
@@ -86,6 +85,12 @@ class DefaultConfigParser(StrictConfigParser):
             raise NotImplementedError()
 
         return value
+
+    def dget(self, section, option, default=None, type=str):
+        if not self.has_option(section, option):
+            return default
+
+        return self._dget(self.get(section, option), default, type)
 
 
 def rlimit_value(val):
@@ -127,6 +132,17 @@ def read_config(config_path):
 
     logger.debug('Reading config files: %s' % includes)
     return cfg, [config_path] + cfg.read(includes)
+
+
+def expand_vars(value, env):
+    if isinstance(value, six.string_types):
+        return replace_gnu_args(value, env=env)
+    elif isinstance(value, dict):
+        return {key: expand_vars(v, env) for key, v in six.iteritems(value)}
+    elif isinstance(value, list):
+        return [expand_vars(v, env) for v in value]
+    else:
+        return value
 
 
 def get_config(config_file):
@@ -187,6 +203,7 @@ def get_config(config_file):
 
     # Initialize watchers, plugins & sockets to manage
     watchers = []
+    watchers_map = {}
     plugins = []
     sockets = []
 
@@ -213,31 +230,64 @@ def get_config(config_file):
             watcher = watcher_defaults()
             watcher['name'] = section.split("watcher:", 1)[1]
 
+            watcher['copy_env'] = dget(section, 'copy_env', False, bool)
+            if watcher['copy_env']:
+                watcher['env'] = dict(global_env)
+            else:
+                watcher['env'] = dict(local_env)
+
+            watchers.append(watcher)
+            watchers_map[section] = watcher
+
+    # making sure we return consistent lists
+    sort_by_field(watchers)
+    sort_by_field(plugins)
+    sort_by_field(sockets)
+
+    # build environment for watcher sections
+    for section in cfg.sections():
+        if section.startswith('env:'):
+            section_elements = section.split("env:", 1)[1]
+            watcher_patterns = [s.strip() for s in section_elements.split(',')]
+            env_items = dict(cfg.items(section, noreplace=True))
+
+            for pattern in watcher_patterns:
+                match = [w for w in watchers if fnmatch(w['name'], pattern)]
+
+                for watcher in match:
+                    watcher['env'].update(env_items)
+
+    # Second pass to make sure env sections apply to all watchers.
+    for section in cfg.sections():
+        if section.startswith("watcher:"):
+            watcher = watchers_map[section]
+
+            env = dict(global_env)
+            env.update(watcher['env'])
+
             # create watcher options
             for opt, val in cfg.items(section, noreplace=True):
+                val = expand_vars(val, env)
+
                 if opt in ('cmd', 'args', 'working_dir', 'uid', 'gid'):
                     watcher[opt] = val
                 elif opt == 'numprocesses':
-                    watcher['numprocesses'] = dget(section, 'numprocesses', 1,
-                                                   int)
+                    watcher['numprocesses'] = cfg._dget(val, 1, int)
                 elif opt == 'warmup_delay':
-                    watcher['warmup_delay'] = dget(section, 'warmup_delay', 0,
-                                                   int)
+                    watcher['warmup_delay'] = cfg._dget(val, 0, int)
                 elif opt == 'executable':
-                    watcher['executable'] = dget(section, 'executable', None,
-                                                 str)
+                    watcher['executable'] = cfg._dget(val, None, str)
                 # default bool to False
                 elif opt in ('shell', 'send_hup', 'stop_children',
                              'close_child_stderr', 'use_sockets', 'singleton',
                              'copy_env', 'copy_path', 'close_child_stdout'):
-                    watcher[opt] = dget(section, opt, False, bool)
+                    watcher[opt] = cfg._dget(val, False, bool)
                 elif opt == 'stop_signal':
                     watcher['stop_signal'] = to_signum(val)
                 elif opt == 'max_retry':
-                    watcher['max_retry'] = dget(section, "max_retry", 5, int)
+                    watcher['max_retry'] = cfg._dget(val, 5, int)
                 elif opt == 'graceful_timeout':
-                    watcher['graceful_timeout'] = dget(
-                        section, "graceful_timeout", 30, int)
+                    watcher['graceful_timeout'] = cfg._dget(val, 30, int)
                 elif opt.startswith('stderr_stream') or \
                         opt.startswith('stdout_stream'):
                     stream_name, stream_opt = opt.split(".", 1)
@@ -246,9 +296,8 @@ def get_config(config_file):
                     limit = opt[7:]
                     watcher['rlimits'][limit] = rlimit_value(val)
                 elif opt == 'priority':
-                    watcher['priority'] = dget(section, "priority", 0, int)
-                elif opt == 'use_papa' and dget(section, 'use_papa', False,
-                                                bool):
+                    watcher['priority'] = cfg._dget(val, 0, int)
+                elif opt == 'use_papa' and cfg._dget(val, False, bool):
                     if papa:
                         watcher['use_papa'] = True
                     else:
@@ -267,65 +316,10 @@ def get_config(config_file):
                 # default bool to True
                 elif opt in ('check_flapping', 'respawn', 'autostart',
                              'close_child_stdin'):
-                    watcher[opt] = dget(section, opt, True, bool)
+                    watcher[opt] = cfg._dget(val, True, bool)
                 else:
                     # freeform
                     watcher[opt] = val
-
-            if watcher['copy_env']:
-                watcher['env'] = dict(global_env)
-            else:
-                watcher['env'] = dict(local_env)
-
-            watchers.append(watcher)
-
-    # making sure we return consistent lists
-    sort_by_field(watchers)
-    sort_by_field(plugins)
-    sort_by_field(sockets)
-
-    # Second pass to make sure env sections apply to all watchers.
-
-    def _extend(target, source):
-        for name, value in source:
-            if name in target:
-                continue
-            target[name] = value
-
-    def _expand_vars(target, key, env):
-        if isinstance(target[key], six.string_types):
-            target[key] = replace_gnu_args(target[key], env=env)
-        elif isinstance(target[key], dict):
-            for k in target[key].keys():
-                _expand_vars(target[key], k, env)
-
-    def _expand_section(section, env, exclude=None):
-        if exclude is None:
-            exclude = ('name', 'env')
-
-        for option in section.keys():
-            if option in exclude:
-                continue
-            _expand_vars(section, option, env)
-
-    # build environment for watcher sections
-    for section in cfg.sections():
-        if section.startswith('env:'):
-            section_elements = section.split("env:", 1)[1]
-            watcher_patterns = [s.strip() for s in section_elements.split(',')]
-            env_items = dict(cfg.items(section, noreplace=True))
-
-            for pattern in watcher_patterns:
-                match = [w for w in watchers if fnmatch(w['name'], pattern)]
-
-                for watcher in match:
-                    watcher['env'].update(env_items)
-
-    # expand environment for watcher sections
-    for watcher in watchers:
-        env = dict(global_env)
-        env.update(watcher['env'])
-        _expand_section(watcher, env)
 
     config['watchers'] = watchers
     config['plugins'] = plugins
