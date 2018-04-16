@@ -56,7 +56,7 @@ class CircusSrv(win32serviceutil.ServiceFramework):
         self.arbiter = Arbiter.load_from_config(config)
 
     def SvcStop(self):
-        self.arbiter.stop()
+        self.arbiter.loop.run_sync(self.arbiter._emergency_stop)
 
     def SvcDoRun(self):
         arbiter = self.arbiter
