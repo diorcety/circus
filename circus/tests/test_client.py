@@ -78,7 +78,8 @@ class TestClient(TestCircus):
         yield self.stop_arbiter()
 
 
-_, tmp_filename = tempfile.mkstemp(prefix='test_hook')
+f, tmp_filename = tempfile.mkstemp(prefix='test_hook')
+os.close(f)
 
 
 def long_hook(*args, **kw):
