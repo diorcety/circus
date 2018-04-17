@@ -275,7 +275,8 @@ class TestCircus(AsyncTestCase):
             os.path.realpath(__file__))))
         args = ['circus/tests/generic.py', callable_path, testfile]
         worker = {'cmd': PYTHON, 'args': args, 'working_dir': wdir,
-                  'name': 'test', 'graceful_timeout': 2}
+                  'name': 'test', 'graceful_timeout': 2,
+                  'stop_signal': signal.SIGINT if not IS_WINDOWS else signal.CTRL_BREAK_EVENT}
         worker.update(kw)
         if not arbiter_kw:
             arbiter_kw = {}
