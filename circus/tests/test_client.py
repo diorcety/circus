@@ -120,7 +120,10 @@ class TestWithHook(TestCircus):
             self.assertFalse(os.path.exists(tmp_filename))
         finally:
             if os.path.exists(tmp_filename):
-                os.unlink(tmp_filename)
+                try:
+                    os.unlink(tmp_filename)
+                except OSError:
+                    pass  # May fail on Windows
             arbiter.stop()
 
 

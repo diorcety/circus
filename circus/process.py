@@ -424,6 +424,16 @@ class Process(object):
         else:
             args = shlex.split(bytestring(cmd), posix=not IS_WINDOWS)
 
+        def unquote(cmd):
+            if cmd.startswith('"') and cmd.endswith('"'):
+                return cmd[1:-1]
+            elif cmd.startswith("'") and cmd.endswith("'"):
+                return cmd[1:-1]
+            else:
+                return cmd
+
+        args = [unquote(cmd) for cmd in args]
+
         if self.shell:
             # subprocess.Popen(shell=True) implies that 1st arg is the
             # requested command, remaining args are applied to sh.

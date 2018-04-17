@@ -446,7 +446,7 @@ def poll_for(filename, needles, timeout=5):
 
 
 @tornado.gen.coroutine
-def async_poll_for(filename, needles, timeout=5):
+def async_poll_for(filename, needles, timeout=5 if not IS_WINDOWS else 10):
     """Async version of poll_for
     """
     if isinstance(needles, str):
