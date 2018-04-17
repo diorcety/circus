@@ -416,7 +416,7 @@ class Process(object):
         if self.args is not None:
             if isinstance(self.args, string_types):
                 args = shlex.split(bytestring(replace_gnu_args(
-                    self.args, **format_kwargs)))
+                    self.args, **format_kwargs)), posix=not IS_WINDOWS)
             else:
                 args = [bytestring(replace_gnu_args(arg, **format_kwargs))
                         for arg in self.args]
