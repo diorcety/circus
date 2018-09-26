@@ -4,6 +4,7 @@ import tempfile
 from datetime import datetime
 import time as time_
 import re
+from circus.share import open
 from stat import ST_DEV, ST_INO, ST_MTIME
 from circus import logger
 from circus.py3compat import s, PY2
@@ -21,19 +22,21 @@ class _FileStreamBase(object):
             fd, filename = tempfile.mkstemp()
             os.close(fd)
         self._filename = filename
-        self._file = self._open()
+        self._file = None
         self._time_format = time_format
         self._buffer = []  # XXX - is this really needed?
+        self.open()
 
     def _open(self):
         return open(self._filename, 'a+')
 
     def open(self):
-        if self._file.closed:
+        if self._file is None or self._file.closed:
             self._file = self._open()
 
     def close(self):
-        self._file.close()
+        if self._file:
+            self._file.close()
 
     def write_data(self, data):
         # data to write on file
@@ -117,9 +120,7 @@ class FileStream(_FileStreamBase):
         """
         Do a rollover, as described in __init__().
         """
-        if self._file:
-            self._file.close()
-            self._file = None
+        self.close()
         if self._backup_count > 0:
             for i in range(self._backup_count - 1, 0, -1):
                 sfn = "%s.%d" % (self._filename, i)
@@ -134,7 +135,7 @@ class FileStream(_FileStreamBase):
                 os.remove(dfn)
             os.rename(self._filename, dfn)
             logger.debug("Log rotating %s -> %s" % (self._filename, dfn))
-        self._file = self._open()
+        self.open()
 
     def _should_rollover(self, raw_data):
         """
@@ -143,8 +144,7 @@ class FileStream(_FileStreamBase):
         Basically, see if the supplied raw_data would cause the file to exceed
         the size limit we have.
         """
-        if self._file is None:                 # delay was set...
-            self._file = self._open()
+        self.open()
         if self._max_bytes > 0:                   # are we rolling over?
             self._file.seek(0, 2)  # due to non-posix-compliant Windows feature
             if self._file.tell() + len(raw_data) >= self._max_bytes:
@@ -192,15 +192,18 @@ class WatchedFileStream(_FileStreamBase):
             else:
                 raise
 
+    def _reopen(self):
+        self._file.flush()
+        self.close()
+        self.open()
+        self._statfile()
+
     def __call__(self, data):
         # stat the filename to see if the file we opened still exists. If the
         # ino or dev doesn't match, we need to open a new file handle
         dev, ino = self._statfilename()
         if dev != self.dev or ino != self.ino:
-            self._file.flush()
-            self._file.close()
-            self._file = self._open()
-            self._statfile()
+            self._reopen()
 
         self.write_data(data)
 
@@ -289,9 +292,7 @@ for weekly rollover: %s" % self._when)
         self._rollover_at = self._compute_rollover(t)
 
     def _do_rollover(self):
-        if self._file:
-            self._file.close()
-            self._file = None
+        self.close()
 
         current_time = int(time_.time())
         dst_now = time_.localtime(current_time)[-1]
@@ -321,7 +322,7 @@ for weekly rollover: %s" % self._when)
             for f in self._get_files_to_delete():
                 os.remove(f)
 
-        self._file = self._open()
+        self.open()
 
         new_rollover_at = self._compute_rollover(current_time)
         while new_rollover_at <= current_time:
