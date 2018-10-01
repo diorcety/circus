@@ -4,6 +4,7 @@ import servicemanager
 import os
 import logging
 import traceback
+import threading
 
 from circus.arbiter import Arbiter
 from circus.util import check_future_exception_and_log, LOG_LEVELS
@@ -66,11 +67,13 @@ class CircusSrv(win32serviceutil.ServiceFramework):
         self.arbiter = Arbiter.load_from_config(config)
 
     def SvcStop(self):
-        self.arbiter.loop.run_sync(self.arbiter._emergency_stop)
+        self.arbiter.loop.add_callback(self.arbiter.stop)
+        self.arbiterThread.join()
 
     def SvcDoRun(self):
         arbiter = self.arbiter
         try:
+            self.arbiterThread = threading.currentThread()
             future = arbiter.start()
             check_future_exception_and_log(future)
         except Exception as e:
@@ -137,3 +140,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
